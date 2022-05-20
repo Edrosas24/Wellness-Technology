@@ -1,0 +1,395 @@
+---
+title: "Bella Beat Case Study"
+output:
+  html_document:
+    df_print: paged
+---
+
+# Introduction
+
+Bellabeat is a high-tech company that manufactures health-focused smart products for women. Bellabeat's offer users a way to collect and monitor data on fitness activity, sleep duration, stress level, and reproductive health via their wellness apps. These apps include the Bellabeat app, Leaf, Time, Spring. Bellabeat also offers a subscription-based membership for 24/7 access to fully personalized guidance to nutrition.
+
+We will conduct a member analysis of users, using data collected from Bellabeat's various apps. Our goal is to gain insight into how consumers are using their devices. Using these insights we will propose a marketing strategy to further improve user experience. and possibly develop new ways to monitor users
+
+## Business Task
+
+Discover trends and analyze patterns in how Bellabeat customers use their monitoring products.
+
+## Key Stakeholder
+
+-   **Urška Sršen**: Bellabeat's cofounder and Chief Creative Officer
+-   **Sando Mur:** Mathematician and Bellabeat's co-founder; key member of the Bellabeat executive team
+
+# Preparing Our Data
+
+The Data used for this study is from Thirty eligible Fitbit users consented to the submission of personal tracker data, including minute-level output for physical activity, heart rate, and sleep monitoring. This data is public licensed and free to use under copyright law.
+
+**Dataset:** [FitBit Fitness Tracker Data](https://www.kaggle.com/datasets/arashnic/fitbit)
+
+**License**: Made available via [Mobius](https://www.kaggle.com/arashnic)
+
+**Time Frame of the Data:** April 12, 2016 to May 12, 2016
+
+## Quality of our Data Source
+
+-   **Reliability:** Measuring activity using the fitness tracker gives the data high accuracy. However, the data is incomplete in certain fields. For example, manually inputted field such as height, weigth, and fat percentage have many entries missing.
+-   **Originality:** This is third-party data that was voluntarily given by Fitbit users via Amazon Mechanical Turk. We must extra careful in understanding our data
+-   **Comprehensive:** The data for the most part has the information needed to answer the business question due to the scope of the question. However, if we wanted to highlight differences in height and BMI, the task would be impossible since the values were not recorded by users.
+-   **Current:** Although the data is 6 years old, we do not to expect major differences between this data and a more current dataset.
+-   **Cited**: The data has been vetted by Google
+
+## Our Working Data
+
+We have access to minute, daily, hourly data. We will focus on Daily Data
+
+We import the follow data in MS SQL Server Management Studio:
+
+-   **dailyCalories_merged.csv**
+-   **dailyIntensities_merged.csv**
+-   **dailySteps_merged.csv**
+-   **sleepDay_merged.csv**
+-   **weightLogInfo_merged.csv**
+
+It is worth noting that sleepDay_merged.csv and weightLoginfo_merged.csv only contains 24 and 8 member IDs out of the 33 that we available. As a result we will limit the amount of analysis that is dependent on these datasets. More so weightLoginfo_merged.csv
+
+#### Data Cleaning
+
+We did the following to the Data
+
+1.  Merged the working datasets
+2.  Covert SleepDay from datetime to date datatype
+3.  Isolated the date component for weightLogInfo_merged
+4.  Created a Rolling sum for each member to figure out how many data entries they have done thus far.
+5.  Exported the Data to a CSV file
+
+```{r eval=FALSE, include=FALSE}
+
+--Daily Tables
+
+Select *
+From dailyCalories_merged
+
+Select *
+From dailyIntensities_merged
+
+Select *
+From dailySteps_merged
+
+Select *
+From weightLogInfo_merged
+
+Select *
+From sleepDay_merged
+
+-- Combine Daily Data
+
+--Drop Time Component from Date for Sleep Table
+Select SleepDay, Replace(SleepDay, ' 12:00:00 AM', '')
+From sleepDay_merged
+
+Alter Table sleepDay_merged
+Add SleepDayDate varchar(250)
+
+Update sleepDay_merged
+Set SleepDayDate = Replace(SleepDay, ' 12:00:00 AM', '')
+
+
+--Make Changes to the weightLoginfo_merged
+-- Drop Time Component from Date for Weight Table and make blanks nulls
+-- Parsename: Deliminater needs to be period, hence the replace()
+Select Date,
+--Left(Date, Len(Date) -12)
+--,Substring(Date, 0, Len(Date) +1-12) -- Alt
+--Didnt work since the time component are not a consistent 12 charaters
+  PARSENAME(Replace(Date, ' ', '.'), 3) -- Date
+--	PARSENAME(Replace(Date, ' ', '.'), 2), -- Time
+--	PARSENAME(Replace(Date, ' ', '.'), 1) -- AM/PM
+From weightLogInfo_merged
+
+Alter Table weightLogInfo_merged
+Add DateYMD nvarchar(255)
+
+Update weightLogInfo_merged
+Set DateYMD = Left(Date, Len(Date) -12)
+Update weightLogInfo_merged
+Set Fat = NULLIF(Fat, '')
+
+
+
+
+Select intensity.*, cals.Calories, steps.StepTotal, sleep.TotalSleepRecords, sleep.TotalMinutesAsleep,
+  sleep.TotalTimeInBed, weightKg, WeightPounds, Fat, BMI, IsManualReport, Logid,
+  Count(*) over (Partition by intensity.Id order by intensity.Id, intensity.ActivityDay) as DayCount
+From dailyCalories_merged As cals
+Left Join dailyIntensities_merged as intensity
+  On cals.Id = intensity.Id and cals.ActivityDay = intensity.ActivityDay
+Left Join dailySteps_merged as steps
+  On steps.Id = intensity.Id and steps.ActivityDay = intensity.ActivityDay
+Left Join sleepDay_merged as sleep
+  On steps.Id =sleep.Id and steps.ActivityDay = sleep.SleepDayDate
+Left Join weightLogInfo_merged as weight
+  On weight.Id =sleep.Id and weight.DateYMD = sleep.SleepDayDate
+
+--Create Table for
+--Used the create table tool in app
+
+-- Copied the col names and data types after the fact
+Drop Table if exists DailyData
+CREATE TABLE [dbo].[DailyData](
+  [Id] [nvarchar](50) NULL,
+  [ActivityDay] [date] NULL,
+  [SedentaryMinutes] [int] NULL,
+  [LightlyActiveMinutes] [int] NULL,
+  [FairlyActiveMinutes] [int] NULL,
+  [VeryActiveMinutes] [int] NULL,
+  [SedentaryActiveDistance] [float] NULL,
+  [LightActiveDistance] [float] NULL,
+  [ModeratelyActiveDistance] [float] NULL,
+  [VeryActiveDistance] [float] NULL,
+  [Calories] [int] NULL,
+  [StepTotal] [int] NULL,
+  [TotalSleepRecords] [int] NULL,
+  [TotalMinutesAsleep] [int] NULL,
+  [TotalTimeInBed] [int] NULL,
+  [weightKg] [float] NULL,
+  [weightPounds] [float] NULL,
+  [Fat] [int] NULL,
+  [BMI] [float] NULL,
+  [IsManualReport] [nvarchar](50) NULL,
+  [Logid] [nvarchar](50) NULL,
+  [DayCount] [int] NULL
+)
+--Insert Join table to new table DailyData
+Insert into DailyData
+Select intensity.*, cals.Calories, steps.StepTotal, sleep.TotalSleepRecords, sleep.TotalMinutesAsleep,
+  sleep.TotalTimeInBed, weightKg, WeightPounds, Fat, BMI, IsManualReport, Logid,
+  Count(*) over (Partition by intensity.Id order by intensity.Id, intensity.ActivityDay) as DayCount
+From dailyCalories_merged As cals
+Left Join dailyIntensities_merged as intensity
+  On cals.Id = intensity.Id and cals.ActivityDay = intensity.ActivityDay
+Left Join dailySteps_merged as steps
+  On steps.Id = intensity.Id and steps.ActivityDay = intensity.ActivityDay
+Left Join sleepDay_merged as sleep
+  On steps.Id =sleep.Id and steps.ActivityDay = sleep.SleepDayDate
+Left Join weightLogInfo_merged as weight
+  On weight.Id =sleep.Id and weight.DateYMD = sleep.SleepDayDate
+
+Select *
+From DailyData
+
+
+```
+
+```{r include=FALSE}
+# install.packages("fpp3")
+# install.packages("readr")
+# install.packages("latex2exp")
+# install.packages("seasonal")
+# install.packages("feasts")
+# install.packages("broom")
+# install.packages("fable.prophet")
+# install.packages("Mcomp")
+
+
+
+library(fpp3)
+library(readr)
+library(latex2exp)
+library(seasonal)
+library(feasts)
+library(broom)
+library(fable)
+library(ggpubr)
+library(fable.prophet)
+library(Mcomp)
+library(readr)
+library(latex2exp)
+```
+
+# Process The Data
+
+We will process the data using R Studio.
+
+**DailyData**: SQL transformed data read into R with date format change.
+
+```{r echo=FALSE}
+#Get the Data into R 
+
+DailyData <- read.csv("Data/DailyData/DailyData.csv")
+DailyData <- DailyData %>% as_tibble
+DailyData <- DailyData %>% mutate(ActivityDay = as.Date(ActivityDay, "%m/%d/%Y"),
+                                  Id = as.character(Id) %>% as.factor())
+DailyData %>% head()
+```
+
+**DailyDataTotal**: Add columns that are aggregates existing columns. They include TotalActiveMin, TotalActiveDist, TotalHoursAsleep
+
+```{r echo=FALSE}
+# Adds the activity Column to get the total activity of a member
+
+DailyDataTotal <- DailyData %>% 
+  mutate(TotalActiveMin = LightlyActiveMinutes + FairlyActiveMinutes + VeryActiveMinutes,
+         TotalActiveDist = LightActiveDistance + ModeratelyActiveDistance + VeryActiveDistance,
+         TotalHoursAsleep = (TotalMinutesAsleep/60) %>% round(2))
+DailyDataTotal %>% head()
+```
+
+**DailyDataLonger**:Combine existing columns and group them by levels in order to compare said levels. In this case, level of activity in both minutes of activity and distance of activity.
+
+```{r echo=FALSE}
+# Make the data Longer: Combines the Activity Columns for a few columns
+DailyDataLonger <- 
+  cbind(
+    DailyData %>% pivot_longer(cols=3:6, names_to = "ActivityMin", values_to = "Minutes") %>% 
+      select(Id, ActivityDay, ActivityMin, Minutes)
+    ,
+    DailyData %>% pivot_longer(cols = 7:10, names_to = "ActivityDist", values_to = "Distance" ) %>% 
+      select(ActivityDist, Distance)
+  )
+# Level the Activity Intensities 
+DailyDataLonger <- 
+  DailyDataLonger %>% 
+  mutate(ActivityMin = factor(ActivityMin, 
+                              levels = c("SedentaryMinutes",  "LightlyActiveMinutes",
+                                         "FairlyActiveMinutes","VeryActiveMinutes" )),
+         ActivityDist = factor(ActivityDist,
+                               levels = c("SedentaryActiveDistance","LightActiveDistance",
+                                          "ModeratelyActiveDistance","VeryActiveDistance"))) 
+
+DailyDataLonger %>% head()
+
+# Write Data for Tableau Use
+# write.csv(DailyData, "DailyData.csv")
+# write.csv(DailyDataTotal, "DailyDataTotal.csv")
+# write.csv(DailyDataLonger, "DailyDataLonger.csv")
+```
+
+# Data Analysis and Visualization
+
+Our Analysis found the following
+
+-   As for activity, they tend to be lightly activity, but are sedentary the majority of the day
+
+```{r echo=FALSE}
+# Average Minutes Active
+DailyDataTotal %>% summarise(MeanActiveMinutes = mean(TotalActiveMin))
+
+# Average Distance while Distance while Active
+DailyDataTotal %>% summarise(MeanActiveDistance = mean(TotalActiveDist))
+
+# Percent of Day Sedenatry 
+DailyDataTotal %>% summarise(PercentSedentary = mean(100* SedentaryMinutes / (SedentaryMinutes + TotalActiveMin))) 
+
+# Percent of Day Active
+DailyDataTotal %>% summarise(PercentActive = mean(100* TotalActiveMin / (SedentaryMinutes + TotalActiveMin))) 
+```
+
+-   Members are fairly to very active for only 35 minutes and a distance of 2 miles each day.
+
+```{r echo=FALSE, warning=FALSE}
+DailyDataLonger %>% 
+  # filter(ActivityMin != "SedentaryMinutes") %>%
+  group_by(ActivityMin) %>%
+  summarise(MeanMin = mean(Minutes)) %>%
+  ggplot(aes(x = ActivityMin, y = MeanMin, fill = ActivityMin)) + 
+  geom_col()+
+  geom_text(aes(label = MeanMin %>% round(3)), vjust =.5)+
+  # geom_text(aes(label = (MeanMin/60) %>% round(3) %>% paste("Hrs")), vjust =.5)+
+  guides(fill = F)+
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) 
+
+
+DailyDataLonger %>%
+  group_by(ActivityDist) %>%
+  # filter(ActivityDist != "SedentaryActiveDistance") %>%
+  summarise(MeanDist = mean(Distance)) %>%
+  ggplot(aes(x = ActivityDist, y = MeanDist, fill = ActivityDist)) +
+  geom_col()+
+  geom_text(aes(label = MeanDist %>% round(3) ), vjust = .5)+
+  guides(fill = F)+
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) 
+# +  theme(axis.title.x=element_blank(), # If you dont x axis labels 
+#         axis.text.x=element_blank(),
+#         axis.ticks.x=element_blank())
+```
+
+-   With the exception of the last few days, the time series data looks to oscillate about its mean.
+
+    -   I believe this dip seems to be a systemic error. However, I do not have the evidence necessary to justify omitting the last few days of data collection.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+DailyDataTotal %>% group_by(ActivityDay) %>% 
+  summarise(MeanActiveMin = mean(TotalActiveMin)) %>% 
+  ggplot(aes(x = ActivityDay, y = MeanActiveMin)) + 
+  geom_line(col = "lightblue") +
+  theme_minimal()
+
+DailyDataTotal %>% group_by(ActivityDay) %>% 
+  summarise(MeanActiveDist = mean(TotalActiveDist)) %>% 
+  ggplot(aes(x = ActivityDay, y = MeanActiveDist)) + 
+  geom_line(col = "lightgreen") +
+  theme_minimal()
+
+DailyDataLonger %>% 
+  # filter(ActivityMin != "SedentaryMinutes") %>% 
+  group_by(ActivityDay, ActivityMin) %>%  
+  summarise(meanMin = mean(Minutes)) %>%
+  ggplot(aes(x = ActivityDay, y = meanMin, col = ActivityMin)) + 
+  geom_line() + 
+  theme_minimal()
+
+DailyDataLonger %>% 
+  # filter(ActivityDist != "SedentaryActiveDistance") %>% 
+  group_by(ActivityDay, ActivityDist) %>%  
+  summarise(meanDist = mean(Distance)) %>%
+  ggplot(aes(x = ActivityDay, y = meanDist, col = ActivityDist)) + 
+  geom_line() + 
+  theme_minimal()
+```
+
+-   The average user sleeps only 7 hours each night.
+
+```{r echo=FALSE, warning=FALSE}
+DailyDataTotal %>% summarise(AvgHoursAsleep = mean(TotalHoursAsleep, na.rm = T))
+```
+
+Next we create Matrices to see if there are any interesting relationships between fields/predictors/columns.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+DailyDataTotal %>% GGally::ggpairs(columns = c(11,12,15,17,19,23,24,25))+
+  theme_minimal()
+```
+
+-   Unsurprisingly, Calories Burned, Step Total, Total Minutes Active, and Active Distance Traveled all have a strong postive correlation.
+
+    -   and they are all negatively correlated with BMI
+
+-   Their is a strong positive correlation between Time Spent in Bed and Hours Slept
+
+-   The correlation between weight measures such as weight and BMI have little to no correlation with Total Hours Slept
+
+-   Total Step Total and Total active distance traveled have a negative correlation with Total hours slept
+
+```{r echo=FALSE, warning=FALSE}
+DailyDataTotal %>% 
+  GGally::ggpairs(columns = c(3:6,25))+
+  theme_minimal()
+
+DailyDataTotal %>% 
+  GGally::ggpairs(columns = c(7:10,25))+
+  theme_minimal()
+```
+
+-   Being Sedentary and active at any intensity seems to have a very weak negative correlation with hours slept
+
+# Acting on our Findings
+
+**Users are Not Sleeping Enough**
+
+We must get members to increase their average sleep duration. This can be done by incentivising users to get in their bed earlier. For example, we can implement a deep breathing feature in app that can help users get in their bed.
+
+**Need better ways to Record Weight /BMI**
+
+It is difficult to analyze weight and BMI accurately if our data is incomplete. Developing a new scale product can help remedy this. This product can connect to the Bellabeat app and auto record other statistics such as Bone Density, Fat, Water and Muscle percentages.
